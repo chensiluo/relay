@@ -1,0 +1,1828 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多设备继电器控制系统</title>
+    <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            min-height: 600px;
+            height: calc(100vh - 40px);
+        }
+
+        /* 左侧设备列表样式 */
+        .device-sidebar {
+            width: 300px;
+            background: #f8f9fa;
+            border-right: 1px solid #e9ecef;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .sidebar-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .add-device-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s ease;
+        }
+
+        .add-device-btn:hover {
+            background: #2980b9;
+        }
+
+        .device-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .device-item {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+            position: relative;
+        }
+
+        .device-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .device-item.active {
+            border-color: #3498db;
+            background: #e3f2fd;
+        }
+
+        .device-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .device-id {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+            margin-bottom: 8px;
+        }
+
+        .device-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-indicator-small {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #e74c3c;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator-small.online {
+            background: #2ecc71;
+        }
+
+        .status-indicator-large {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #e74c3c;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator-large.online {
+            background: #2ecc71;
+        }
+
+        .status-text {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+        }
+
+        .device-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .device-item:hover .device-actions {
+            opacity: 1;
+        }
+
+        .device-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .device-item:hover .device-actions {
+            opacity: 1;
+        }
+
+        .device-item-btn {
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            border-radius: 4px;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            font-size: 0.7rem;
+            transition: background 0.3s ease;
+        }
+
+        .device-item-btn:hover {
+            background: #3498db;
+            color: white;
+        }
+
+        .device-item-btn.edit {
+            background: #f39c12;
+            color: white;
+        }
+
+        .device-item-btn.delete {
+            background: #e74c3c;
+            color: white;
+        }
+
+        /* 右侧主内容区 */
+        .main-content {
+            flex: 1;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        /* 页面头部 */
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .header-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .header-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .header-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #e74c3c;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #2ecc71;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        /* 设备控制区域 */
+        .control-section {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            background: #f8f9fa;
+        }
+
+        /* 设备头部样式 */
+        .device-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .device-header h2 {
+            color: #2c3e50;
+            font-size: 2rem;
+            margin: 0;
+            font-weight: 600;
+        }
+
+        .device-header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .device-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-width: 120px;
+            white-space: nowrap;
+            height: 40px;
+        }
+
+        .device-btn:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        .device-btn.edit {
+            background: #f39c12;
+        }
+
+        .device-btn.edit:hover {
+            background: #e67e22;
+        }
+
+        .device-btn.config {
+            background: #9b59b6;
+        }
+
+        .device-btn.config:hover {
+            background: #8e44ad;
+        }
+
+        .device-btn.delete {
+            background: #e74c3c;
+        }
+
+        .device-btn.delete:hover {
+            background: #c0392b;
+        }
+
+        .device-btn.refresh {
+            background: #2ecc71;
+        }
+
+        .device-btn.refresh:hover {
+            background: #27ae60;
+        }
+
+        .device-btn.restart {
+            background: #f39c12;
+        }
+
+        .device-btn.restart:hover {
+            background: #e67e22;
+        }
+
+        /* 继电器控制面板 */
+        .relay-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 30px;
+        }
+
+        .no-device-selected {
+            text-align: center;
+            padding: 60px 20px;
+            color: #7f8c8d;
+            font-size: 1.2rem;
+            grid-column: 1 / -1;
+        }
+
+        /* 继电器控制卡样式 */
+        .relay-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 3px solid transparent;
+            position: relative;
+        }
+
+        .relay-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .relay-card.active {
+            border-color: #3498db;
+        }
+
+        .relay-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .relay-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2c3e50;
+            cursor: pointer;
+            transition: color 0.3s ease;
+        }
+
+        .relay-title:hover {
+            color: #3498db;
+        }
+
+        .relay-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            color: white;
+        }
+
+        .relay1-icon {
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+        }
+
+        .relay2-icon {
+            background: linear-gradient(135deg, #2980b9 0%, #3498db 100%);
+        }
+
+        .relay-state {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .state-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .state-led {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #95a5a6;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 10px rgba(149, 165, 166, 0.3);
+        }
+
+        .state-led.on {
+            background: #2ecc71;
+            box-shadow: 0 0 20px rgba(46, 204, 113, 0.6);
+            animation: pulse 2s infinite;
+        }
+
+        .state-led.off {
+            background: #e74c3c;
+            box-shadow: 0 0 10px rgba(231, 76, 60, 0.3);
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 20px rgba(46, 204, 113, 0.6); }
+            50% { box-shadow: 0 0 25px rgba(46, 204, 113, 0.8); }
+            100% { box-shadow: 0 0 20px rgba(46, 204, 113, 0.6); }
+        }
+
+        .state-text {
+            font-size: 1.2rem;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+            background: #f8f9fa;
+            color: #2c3e50;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+
+        .state-text.on {
+            background: #d5f4e6;
+            color: #27ae60;
+            border-color: #2ecc71;
+        }
+
+        .state-text.off {
+            background: #fadbd8;
+            color: #c0392b;
+            border-color: #e74c3c;
+        }
+
+        .control-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-on {
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+            color: white;
+        }
+
+        .btn-on:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(39, 174, 96, 0.4);
+        }
+
+        .btn-off {
+            background: linear-gradient(135deg, #c0392b 0%, #e74c3c 100%);
+            color: white;
+        }
+
+        .btn-off:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4);
+        }
+
+        .btn-toggle {
+            background: linear-gradient(135deg, #f39c12 0%, #f1c40f 100%);
+            color: white;
+            grid-column: 1 / -1;
+        }
+
+        .btn-toggle:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(243, 156, 18, 0.4);
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            background: #2c3e50;
+            color: white;
+            margin-top: auto;
+        }
+
+        /* 模态框样式 */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.success {
+            background: #27ae60;
+        }
+
+        .notification.error {
+            background: #e74c3c;
+        }
+
+        .notification.info {
+            background: #3498db;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            transform: translateY(-50px);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.show .modal {
+            transform: translateY(0);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #7f8c8d;
+            transition: color 0.3s ease;
+        }
+
+        .modal-close:hover {
+            color: #e74c3c;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .form-checkbox {
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 30px;
+        }
+
+        .form-notice {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #3498db;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+                height: auto;
+            }
+            
+            .device-sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #e9ecef;
+            }
+            
+            .relay-controls {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .control-buttons {
+                grid-template-columns: 1fr;
+            }
+            
+            .header-controls {
+                position: static;
+                justify-content: center;
+                margin-top: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 左侧设备列表 -->
+        <div class="device-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">📱 设备列表</div>
+                <button class="add-device-btn" onclick="showAddDeviceModal()">+ 添加设备</button>
+            </div>
+            <div class="device-list" id="deviceList">
+                <!-- 设备列表将通过JavaScript动态生成 -->
+            </div>
+        </div>
+
+        <!-- 右侧主内容区 -->
+        <div class="main-content">
+            <!-- 页面头部 -->
+            <div class="header">
+                <div class="header-controls">
+                    <button class="header-btn" onclick="showMqttConfig()">⚙️ MQTT设置</button>
+                </div>
+                <h1>🔌 多设备继电器控制系统</h1>
+                <p>基于 MQTT 协议的物联网设备远程控制</p>
+                <div class="connection-status">
+                    <div class="status-indicator" id="statusIndicator"></div>
+                    <span id="statusText">连接断开</span>
+                </div>
+            </div>
+
+            <!-- 设备控制区域 -->
+            <div class="control-section">
+                <!-- 当前设备信息栏 -->
+                <div class="device-header">
+                    <h2 id="currentDeviceName">请选择设备</h2>
+                    <div class="device-header-actions">
+                        <button class="device-btn edit" onclick="editDeviceInfo()" id="editDeviceBtn">✏️ 编辑信息</button>
+                        <button class="device-btn config" onclick="sendDeviceConfig()" id="configDeviceBtn">⚙️ 下发配置</button>
+                        <button class="device-btn restart" onclick="restartDevice()" id="restartDeviceBtn">🔄 重启设备</button>
+                        <button class="device-btn delete" onclick="removeCurrentDevice()" id="removeDeviceBtn">🗑️ 删除</button>
+                    </div>
+                </div>
+
+                <!-- 继电器控制面板 -->
+                <div class="relay-controls" id="relayControls">
+                    <div class="no-device-selected">
+                        <p>请在左侧选择要控制的设备</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer">
+                <p>© 2024 多设备继电器控制系统 | 基于合宙 Air780EP 开发</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知区域 -->
+    <div class="notification" id="notification"></div>
+
+    <!-- MQTT配置对话框 -->
+    <div class="modal-overlay" id="mqttConfigModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">⚙️ MQTT服务器配置</h3>
+                <button class="modal-close" onclick="hideMqttConfig()">×</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">服务器地址</label>
+                <input type="text" class="form-input" id="mqttHost" placeholder="mqtt服务器地址">
+            </div>
+            <div class="form-group">
+                <label class="form-label">端口号</label>
+                <input type="number" class="form-input" id="mqttPort" placeholder="WebSocket端口">
+            </div>
+            <div class="form-group">
+                <label class="form-label">路径 (可选)</label>
+                <input type="text" class="form-input" id="mqttPath" placeholder="mqtt">
+            </div>
+            <div class="form-group">
+                <label class="form-label">用户名</label>
+                <input type="text" class="form-input" id="mqttUser" placeholder="用户名">
+            </div>
+            <div class="form-group">
+                <label class="form-label">密码</label>
+                <input type="password" class="form-input" id="mqttPassword" placeholder="密码">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" class="form-checkbox" id="mqttSSL">
+                    启用SSL加密
+                </label>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-secondary" onclick="hideMqttConfig()">取消</button>
+                <button class="btn btn-primary" onclick="saveMqttConfig()">保存并连接</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加设备对话框 -->
+    <div class="modal-overlay" id="addDeviceModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">📱 添加新设备</h3>
+                <button class="modal-close" onclick="hideAddDeviceModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">设备名称</label>
+                <input type="text" class="form-input" id="deviceNameInput" placeholder="输入设备名称">
+            </div>
+            <div class="form-group">
+                <label class="form-label">设备ID (IMEI)</label>
+                <input type="text" class="form-input" id="deviceIdInput" placeholder="输入设备IMEI码">
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-secondary" onclick="hideAddDeviceModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveNewDevice()">保存设备</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑设备对话框 -->
+    <div class="modal-overlay" id="editDeviceModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">✏️ 编辑设备</h3>
+                <button class="modal-close" onclick="hideEditDeviceModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">设备名称</label>
+                <input type="text" class="form-input" id="editDeviceNameInput" placeholder="输入设备名称">
+            </div>
+            <div class="form-group">
+                <label class="form-label">设备ID (IMEI)</label>
+                <input type="text" class="form-input" id="editDeviceIdInput" placeholder="设备IMEI码" readonly>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-secondary" onclick="hideEditDeviceModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveEditedDevice()">保存修改</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 继电器名称编辑对话框 -->
+    <div class="modal-overlay" id="relayNameModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">📝 修改继电器名称</h3>
+                <button class="modal-close" onclick="hideRelayName()">×</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">继电器 <span id="editingRelayNum">1</span> 的新名称</label>
+                <input type="text" class="form-input" id="relayNameInput" placeholder="输入继电器名称">
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-secondary" onclick="hideRelayName()">取消</button>
+                <button class="btn btn-primary" onclick="saveRelayName()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 配置下发对话框 -->
+    <div class="modal-overlay" id="configDeviceModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">⚙️ 下发配置到设备</h3>
+                <button class="modal-close" onclick="hideConfigDeviceModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">目标设备</label>
+                <input type="text" class="form-input" id="configDeviceId" readonly>
+            </div>
+            <div class="form-group">
+                <label class="form-label">MQTT服务器地址</label>
+                <input type="text" class="form-input" id="configMqttHost" placeholder="mqtt服务器地址">
+            </div>
+            <div class="form-group">
+                <label class="form-label">端口号</label>
+                <input type="number" class="form-input" id="configMqttPort" placeholder="MQTT端口">
+            </div>
+            <div class="form-group">
+                <label class="form-label">用户名</label>
+                <input type="text" class="form-input" id="configMqttUser" placeholder="MQTT用户名">
+            </div>
+            <div class="form-group">
+                <label class="form-label">密码</label>
+                <input type="password" class="form-input" id="configMqttPassword" placeholder="MQTT密码">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" class="form-checkbox" id="configMqttSSL">
+                    启用SSL加密
+                </label>
+            </div>
+            <div class="form-notice">
+                <p style="color: #e74c3c; font-size: 0.9rem; background: #fff8f8; padding: 10px; border-radius: 5px; border-left: 3px solid #e74c3c;">
+                    ⚠️ 警告：下发配置后设备将重启并重新连接MQTT服务器
+                </p>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-secondary" onclick="hideConfigDeviceModal()">取消</button>
+                <button class="btn btn-primary" onclick="confirmSendConfig()">确认下发</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 默认配置
+        const DEFAULT_CONFIG = {
+            mqtt_host: '120.25.229.70',
+            mqtt_port: 8083,
+            mqtt_path: 'mqtt',
+            mqtt_user: 'super-sms',
+            mqtt_pwd: 'super-sms',
+            mqtt_ssl: false,
+            relay_names: ['继电器 1', '继电器 2']
+        };
+
+        // 全局变量
+        let mqttClient = null;
+        let currentDeviceId = ''; // 当前选中的设备ID
+        let isConnected = false;
+        let config = {...DEFAULT_CONFIG};
+        
+        // 设备管理
+        let devices = [];
+        let deviceStatus = {}; // 设备在线状态 {'device_id': {online: true, lastPing: timestamp}}
+
+        // 初始化函数
+        function init() {
+            console.log('初始化多设备继电器控制系统...');
+            loadConfig();
+            loadDevices();
+            setupEventListeners();
+            
+            // 等待MQTT库加载完成
+            if (typeof mqtt !== 'undefined') {
+                connectMQTT();
+            } else {
+                console.log('等待MQTT库加载...');
+                setTimeout(() => {
+                    if (typeof mqtt !== 'undefined') {
+                        connectMQTT();
+                    } else {
+                        showNotification('MQTT库加载失败，请检查网络连接', 'error');
+                    }
+                }, 2000);
+            }
+        }
+
+        // 配置管理函数
+        function loadConfig() {
+            const saved = localStorage.getItem('relay_control_config');
+            if (saved) {
+                try {
+                    config = {...DEFAULT_CONFIG, ...JSON.parse(saved)};
+                    console.log('配置已加载:', config);
+                } catch (e) {
+                    console.error('配置加载失败，使用默认配置:', e);
+                    config = {...DEFAULT_CONFIG};
+                }
+            } else {
+                // 如果没有保存的配置，使用默认配置
+                config = {...DEFAULT_CONFIG};
+                console.log('使用默认配置:', config);
+            }
+        }
+
+        function saveConfig() {
+            localStorage.setItem('relay_control_config', JSON.stringify(config));
+            console.log('配置已保存:', config);
+        }
+
+        // 设备管理函数
+        function loadDevices() {
+            const saved = localStorage.getItem('relay_control_devices');
+            if (saved) {
+                try {
+                    devices = JSON.parse(saved);
+                    console.log('设备列表已加载:', devices);
+                    renderDeviceList();
+                    
+                    // 自动选择第一个设备
+                    if (devices.length > 0) {
+                        selectDevice(devices[0].id);
+                    }
+                } catch (e) {
+                    console.error('设备列表加载失败:', e);
+                    devices = [];
+                }
+            }
+        }
+
+        function saveDevices() {
+            localStorage.setItem('relay_control_devices', JSON.stringify(devices));
+            console.log('设备列表已保存:', devices);
+        }
+
+        function renderDeviceList() {
+            const deviceList = document.getElementById('deviceList');
+            deviceList.innerHTML = '';
+            
+            devices.forEach(device => {
+                const deviceItem = document.createElement('div');
+                deviceItem.className = `device-item ${device.id === currentDeviceId ? 'active' : ''}`;
+                deviceItem.onclick = () => selectDevice(device.id);
+                
+                const isOnline = deviceStatus[device.id] && deviceStatus[device.id].online;
+                
+                deviceItem.innerHTML = `
+                    <div class="device-actions">
+                        <button class="device-item-btn edit" onclick="editDevice('${device.id}', event)" title="编辑">✏️</button>
+                        <button class="device-item-btn delete" onclick="deleteDevice('${device.id}', event)" title="删除">🗑️</button>
+                    </div>
+                    <div class="device-name">${device.name}</div>
+                    <div class="device-id">ID: ${device.id}</div>
+                    <div class="device-status">
+                        <div class="status-indicator-large ${isOnline ? 'online' : 'offline'}" title="${isOnline ? '在线' : '离线'}"></div>
+                    </div>
+                `;
+                
+                deviceList.appendChild(deviceItem);
+            });
+        }
+
+        function selectDevice(deviceId) {
+            currentDeviceId = deviceId;
+            const device = devices.find(d => d.id === deviceId);
+            
+            if (device) {
+                document.getElementById('currentDeviceName').textContent = device.name;
+                renderRelayControls(device);
+                
+                // 刷新设备状态
+                getCurrentDeviceStatus();
+            }
+            
+            renderDeviceList();
+        }
+
+        function renderRelayControls(device) {
+            const relayControls = document.getElementById('relayControls');
+            
+            relayControls.innerHTML = `
+                <div class="relay-card" id="relay1Card">
+                    <div class="relay-header">
+                        <div class="relay-title" onclick="editRelayName(1)">${config.relay_names[0] || '继电器 1'}</div>
+                        <div class="relay-icon relay1-icon">🔌</div>
+                    </div>
+                    <div class="relay-state">
+                        <div class="state-indicator">
+                            <div class="state-led off" id="relay1Led"></div>
+                            <span class="state-text off" id="relay1State">设备已关闭</span>
+                        </div>
+                    </div>
+                    <div class="control-buttons">
+                        <button class="btn btn-on" onclick="controlRelay(1, true)" id="relay1On">开启</button>
+                        <button class="btn btn-off" onclick="controlRelay(1, false)" id="relay1Off">关闭</button>
+                    </div>
+                </div>
+
+                <div class="relay-card" id="relay2Card">
+                    <div class="relay-header">
+                        <div class="relay-title" onclick="editRelayName(2)">${config.relay_names[1] || '继电器 2'}</div>
+                        <div class="relay-icon relay2-icon">🔌</div>
+                    </div>
+                    <div class="relay-state">
+                        <div class="state-indicator">
+                            <div class="state-led off" id="relay2Led"></div>
+                            <span class="state-text off" id="relay2State">设备已关闭</span>
+                        </div>
+                    </div>
+                    <div class="control-buttons">
+                        <button class="btn btn-on" onclick="controlRelay(2, true)" id="relay2On">开启</button>
+                        <button class="btn btn-off" onclick="controlRelay(2, false)" id="relay2Off">关闭</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 设备管理对话框函数
+        function showAddDeviceModal() {
+            document.getElementById('addDeviceModal').classList.add('show');
+            document.getElementById('deviceNameInput').focus();
+        }
+
+        function hideAddDeviceModal() {
+            document.getElementById('addDeviceModal').classList.remove('show');
+            // 清空表单
+            document.getElementById('deviceNameInput').value = '';
+            document.getElementById('deviceIdInput').value = '';
+        }
+
+        function saveNewDevice() {
+            const name = document.getElementById('deviceNameInput').value.trim();
+            const id = document.getElementById('deviceIdInput').value.trim();
+
+            if (!name || !id) {
+                showNotification('请填写设备名称和ID', 'error');
+                return;
+            }
+
+            // 检查设备ID是否已存在
+            if (devices.find(d => d.id === id)) {
+                showNotification('设备ID已存在', 'error');
+                return;
+            }
+
+            const newDevice = {
+                id: id,
+                name: name
+            };
+
+            devices.push(newDevice);
+            saveDevices();
+            hideAddDeviceModal();
+            renderDeviceList();
+            selectDevice(id);
+            showNotification('设备添加成功', 'success');
+        }
+
+        function editDevice(deviceId, event) {
+            event.stopPropagation();
+            const device = devices.find(d => d.id === deviceId);
+            if (device) {
+                document.getElementById('editDeviceNameInput').value = device.name;
+                document.getElementById('editDeviceIdInput').value = device.id;
+                
+                // 保存当前编辑的设备ID
+                document.getElementById('editDeviceModal').dataset.editingDeviceId = deviceId;
+                document.getElementById('editDeviceModal').classList.add('show');
+            }
+        }
+
+        function hideEditDeviceModal() {
+            document.getElementById('editDeviceModal').classList.remove('show');
+        }
+
+        function saveEditedDevice() {
+            const deviceId = document.getElementById('editDeviceModal').dataset.editingDeviceId;
+            const device = devices.find(d => d.id === deviceId);
+            
+            if (device) {
+                device.name = document.getElementById('editDeviceNameInput').value.trim();
+                
+                saveDevices();
+                hideEditDeviceModal();
+                renderDeviceList();
+                
+                // 如果当前选中的设备被编辑，更新显示
+                if (currentDeviceId === deviceId) {
+                    document.getElementById('currentDeviceName').textContent = device.name;
+                }
+                
+                showNotification('设备信息已更新', 'success');
+            }
+        }
+
+        function deleteDevice(deviceId, event) {
+            event.stopPropagation();
+            
+            if (confirm('确定要删除这个设备吗？')) {
+                devices = devices.filter(d => d.id !== deviceId);
+                saveDevices();
+                
+                // 如果删除的是当前选中的设备，选择另一个设备
+                if (currentDeviceId === deviceId) {
+                    if (devices.length > 0) {
+                        selectDevice(devices[0].id);
+                    } else {
+                        currentDeviceId = '';
+                        document.getElementById('currentDeviceName').textContent = '请选择设备';
+                        document.getElementById('relayControls').innerHTML = '<div class="no-device-selected"><p>请在左侧选择要控制的设备</p></div>';
+                    }
+                }
+                
+                renderDeviceList();
+                showNotification('设备已删除', 'success');
+            }
+        }
+
+        function editCurrentDevice() {
+            if (currentDeviceId) {
+                editDevice(currentDeviceId, {stopPropagation: () => {}});
+            }
+        }
+
+        function removeCurrentDevice() {
+            if (currentDeviceId) {
+                deleteDevice(currentDeviceId, {stopPropagation: () => {}});
+            }
+        }
+
+        // 重启当前设备
+        function restartDevice() {
+            if (!currentDeviceId) {
+                showNotification('请先选择要重启的设备', 'error');
+                return;
+            }
+            
+            if (!mqttClient || !isConnected) {
+                showNotification('MQTT连接未建立，无法重启设备', 'error');
+                return;
+            }
+            
+            const device = devices.find(d => d.id === currentDeviceId);
+            if (!device) {
+                showNotification('设备不存在', 'error');
+                return;
+            }
+            
+            if (confirm(`确定要重启设备 "${device.name}" 吗？设备将断开连接并重新启动。`)) {
+                try {
+                    // 发送重启命令
+                    const command = {
+                        command: "repboot"
+                    };
+                    
+                    mqttClient.publish(`${device.id}/sub`, JSON.stringify(command));
+                    showNotification(`正在重启设备 "${device.name}"...`, 'info');
+                    
+                    // 监控设备重新上线
+                    monitorDeviceReconnection(device.id);
+                    
+                } catch (error) {
+                    console.error('重启设备失败:', error);
+                    showNotification('重启设备失败: ' + error.message, 'error');
+                }
+            }
+        }
+
+        function refreshAllDevices() {
+            devices.forEach(device => {
+                console.log('刷新设备状态:', device.id);
+            });
+            
+            if (currentDeviceId) {
+                getCurrentDeviceStatus();
+            }
+            
+            showNotification('正在刷新所有设备状态', 'info');
+        }
+
+        // MQTT连接
+        function connectMQTT() {
+            if (typeof mqtt === 'undefined') {
+                showNotification('MQTT库未加载，请检查网络连接', 'error');
+                return;
+            }
+
+            const protocol = config.mqtt_ssl ? 'wss' : 'ws';
+            const wsUrl = `${protocol}://${config.mqtt_host}:${config.mqtt_port}${config.mqtt_path ? '/' + config.mqtt_path : ''}`;
+            const clientId = 'web_client_' + Math.random().toString(16).substr(2, 8);
+            
+            try {
+                console.log('尝试连接MQTT:', wsUrl);
+                
+                const options = {
+                    clientId: clientId,
+                    username: config.mqtt_user,
+                    password: config.mqtt_pwd,
+                    clean: true,
+                    reconnectPeriod: 3000,
+                    connectTimeout: 3000
+                };
+                
+                mqttClient = mqtt.connect(wsUrl, options);
+                
+                mqttClient.on('connect', onConnect);
+                mqttClient.on('message', onMessageArrived);
+                mqttClient.on('error', onConnectFailure);
+                mqttClient.on('close', onConnectionLost);
+                
+                updateStatus('正在连接...', false);
+                
+            } catch (error) {
+                console.error('MQTT连接错误:', error);
+                showNotification('连接失败: ' + error.message, 'error');
+                updateStatus('连接失败', false);
+            }
+        }
+
+        function onConnect() {
+            console.log('MQTT连接成功');
+            isConnected = true;
+            updateStatus('已连接', true);
+            showNotification('MQTT连接成功', 'success');
+            
+            subscribeToAllDevices();
+            
+            setTimeout(() => {
+                if (currentDeviceId) {
+                    getCurrentDeviceStatus();
+                }
+            }, 1000);
+        }
+
+        function subscribeToAllDevices() {
+            if (!mqttClient || !isConnected) return;
+            
+            devices.forEach(device => {
+                // 订阅设备发布主题，接收GPIO状态
+                mqttClient.subscribe(`${device.id}/pub`, (err) => {
+                    if (!err) {
+                        console.log(`已订阅设备 ${device.id} 状态发布主题`);
+                    }
+                });
+                
+                // 订阅设备心跳主题，检查设备在线状态
+                mqttClient.subscribe(`${device.id}/status`, (err) => {
+                    if (!err) {
+                        console.log(`已订阅设备 ${device.id} 心跳主题`);
+                    }
+                });
+            });
+        }
+
+        function onConnectFailure(error) {
+            console.error('MQTT连接失败:', error);
+            isConnected = false;
+            updateStatus('连接失败', false);
+            showNotification('连接失败: ' + error.errorMessage, 'error');
+            
+            // 5秒后重试
+            setTimeout(connectMQTT, 5000);
+        }
+
+        function onConnectionLost(response) {
+            console.log('MQTT连接丢失:', response);
+            isConnected = false;
+            updateStatus('连接断开', false);
+            showNotification('连接已断开', 'error');
+            
+            // 尝试重连
+            setTimeout(connectMQTT, 3000);
+        }
+
+        function onMessageArrived(topic, message) {
+            console.log('收到消息:', topic, message.toString());
+            
+            try {
+                const data = JSON.parse(message.toString());
+                
+                // 提取设备ID
+                const deviceId = topic.split('/')[0];
+                
+                if (topic.endsWith('/pub')) {
+                    // 从设备发布主题接收GPIO状态
+                    if (deviceId === currentDeviceId) {
+                        updateRelayStates(data);
+                    }
+                    // 只要收到pub主题数据就认为设备在线
+                    updateDeviceOnlineStatus(deviceId, true);
+                } else if (topic.endsWith('/status')) {
+                    // 从设备心跳主题更新设备在线状态
+                    updateDeviceOnlineStatus(deviceId, true);
+                }
+                
+            } catch (error) {
+                console.error('消息解析错误:', error);
+            }
+        }
+
+        // 更新设备在线状态
+        function updateDeviceOnlineStatus(deviceId, isOnline) {
+            if (!deviceStatus[deviceId]) {
+                deviceStatus[deviceId] = {};
+            }
+            
+            // 只要收到status主题的数据就认为设备在线
+            deviceStatus[deviceId].online = isOnline;
+            
+            // 更新设备列表显示
+            renderDeviceList();
+        }
+
+        // 更新继电器状态显示
+        function updateRelayStates(data) {
+            // GPIO编号映射到继电器编号
+            const gpioMap = {37: 1, 38: 2}; // GPIO37对应继电器1，GPIO38对应继电器2
+            
+            // 遍历所有GPIO状态
+            Object.keys(data).forEach(gpioKey => {
+                // 提取GPIO编号（如"gpio37"中的37）
+                const gpioNum = parseInt(gpioKey.replace('gpio', ''));
+                const relayNum = gpioMap[gpioNum];
+                
+                if (relayNum && data[gpioKey] !== undefined) {
+                    // 高电平为1表示开，低电平为0表示关
+                    const isOn = data[gpioKey] === 1;
+                    
+                    const relayState = document.getElementById(`relay${relayNum}State`);
+                    const relayOn = document.getElementById(`relay${relayNum}On`);
+                    const relayOff = document.getElementById(`relay${relayNum}Off`);
+                    
+                    if (relayState) {
+                        relayState.textContent = isOn ? '设备运行中' : '设备已关闭';
+                        relayState.className = `state-text ${isOn ? 'on' : 'off'}`;
+                    }
+                    
+                    const relayLed = document.getElementById(`relay${relayNum}Led`);
+                    if (relayLed) {
+                        relayLed.className = `state-led ${isOn ? 'on' : 'off'}`;
+                    }
+                    
+                    if (relayOn && relayOff) {
+                        relayOn.disabled = isOn;
+                        relayOff.disabled = !isOn;
+                    }
+                }
+            });
+        }
+
+        // 处理命令响应
+        function handleCommandResponse(data) {
+            if (data.result === 'success') {
+                showNotification('操作执行成功', 'success');
+                
+                // 如果是继电器控制，更新状态显示
+                if (data.relay_num !== undefined && data.state !== undefined) {
+                    const relayElement = document.getElementById(`relay${data.relay_num}State`);
+                    if (relayElement) {
+                        relayElement.textContent = data.state ? '设备运行中' : '设备已关闭';
+                        relayElement.className = `state-text ${data.state ? 'on' : 'off'}`;
+                    }
+                    
+                    const relayLed = document.getElementById(`relay${data.relay_num}Led`);
+                    if (relayLed) {
+                        relayLed.className = `state-led ${data.state ? 'on' : 'off'}`;
+                    }
+                }
+            } else {
+                showNotification('操作失败: ' + (data.message || '未知错误'), 'error');
+            }
+        }
+
+        // 继电器控制函数
+        function controlRelay(relayNum, state) {
+            if (!currentDeviceId || !mqttClient || !isConnected) {
+                showNotification('请先连接MQTT并选择设备', 'error');
+                return;
+            }
+            
+            const device = devices.find(d => d.id === currentDeviceId);
+            if (!device) {
+                showNotification('设备不存在', 'error');
+                return;
+            }
+            
+            // 继电器编号映射到GPIO口
+            const gpioMap = {1: 37, 2: 38}; // 继电器1对应GPIO37，继电器2对应GPIO38
+            const gpio = gpioMap[relayNum];
+            
+            if (!gpio) {
+                showNotification('无效的继电器编号', 'error');
+                return;
+            }
+            
+            const command = {
+                gpio: gpio,
+                action: state ? 'open' : 'close'
+            };
+            
+            try {
+                mqttClient.publish(`${device.id}/sub`, JSON.stringify(command));
+                showNotification(`正在${state ? '开启' : '关闭'}继电器${relayNum} (GPIO${gpio})`, 'info');
+            } catch (error) {
+                console.error('发送控制命令失败:', error);
+                showNotification('控制命令发送失败', 'error');
+            }
+        }
+
+        // 切换继电器状态
+        function toggleRelay(relayNum) {
+            if (!currentDeviceId || !mqttClient || !isConnected) {
+                showNotification('请先连接MQTT并选择设备', 'error');
+                return;
+            }
+            
+            const device = devices.find(d => d.id === currentDeviceId);
+            if (!device) {
+                showNotification('设备不存在', 'error');
+                return;
+            }
+            
+            const command = {
+                command: 'toggle_relay',
+                relay_num: relayNum
+            };
+            
+            try {
+                mqttClient.publish(`${device.id}/sub`, JSON.stringify(command));
+                showNotification(`正在切换继电器${relayNum}状态`, 'info');
+            } catch (error) {
+                console.error('发送切换命令失败:', error);
+                showNotification('切换命令发送失败', 'error');
+            }
+        }
+
+        // 获取当前设备状态
+        function getCurrentDeviceStatus() {
+            if (!currentDeviceId || !mqttClient || !isConnected) {
+                showNotification('请先连接MQTT并选择设备', 'error');
+                return;
+            }
+            
+            const command = {
+                command: 'get_status'
+            };
+            
+            try {
+                mqttClient.publish(`${currentDeviceId}/control`, JSON.stringify(command));
+                showNotification('正在获取设备状态...', 'info');
+            } catch (error) {
+                console.error('发送状态查询命令失败:', error);
+                showNotification('状态查询失败', 'error');
+            }
+        }
+
+        // 界面控制
+        function updateStatus(text, connected) {
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            
+            if (indicator && statusText) {
+                indicator.className = `status-indicator ${connected ? 'connected' : ''}`;
+                statusText.textContent = text;
+            }
+        }
+
+        function showNotification(message, type) {
+            const notification = document.getElementById('notification');
+            if (notification) {
+                notification.textContent = message;
+                notification.className = `notification show ${type}`;
+                
+                setTimeout(() => {
+                    notification.className = 'notification';
+                }, 3000);
+            }
+        }
+
+        // 继电器名称编辑
+        function editRelayName(relayNum) {
+            document.getElementById('editingRelayNum').textContent = relayNum;
+            document.getElementById('relayNameInput').value = config.relay_names[relayNum - 1] || `继电器 ${relayNum}`;
+            document.getElementById('relayNameModal').dataset.editingRelayNum = relayNum;
+            document.getElementById('relayNameModal').classList.add('show');
+        }
+
+        function hideRelayName() {
+            document.getElementById('relayNameModal').classList.remove('show');
+        }
+
+        function saveRelayName() {
+            const relayNum = parseInt(document.getElementById('relayNameModal').dataset.editingRelayNum);
+            const newName = document.getElementById('relayNameInput').value.trim();
+            
+            if (newName) {
+                config.relay_names[relayNum - 1] = newName;
+                saveConfig();
+                
+                const relayTitle = document.querySelector(`#relay${relayNum}Card .relay-title`);
+                if (relayTitle) {
+                    relayTitle.textContent = newName;
+                }
+                
+                hideRelayName();
+                showNotification('继电器名称已更新', 'success');
+            }
+        }
+
+        // MQTT配置
+        function showMqttConfig() {
+            document.getElementById('mqttHost').value = config.mqtt_host || '';
+            document.getElementById('mqttPort').value = config.mqtt_port || '';
+            document.getElementById('mqttPath').value = config.mqtt_path || '';
+            document.getElementById('mqttUser').value = config.mqtt_user || '';
+            document.getElementById('mqttPassword').value = config.mqtt_pwd || '';
+            document.getElementById('mqttSSL').checked = config.mqtt_ssl || false;
+            
+            document.getElementById('mqttConfigModal').classList.add('show');
+        }
+
+        function hideMqttConfig() {
+            document.getElementById('mqttConfigModal').classList.remove('show');
+        }
+
+        function saveMqttConfig() {
+            config.mqtt_host = document.getElementById('mqttHost').value.trim() || DEFAULT_CONFIG.mqtt_host;
+            config.mqtt_port = parseInt(document.getElementById('mqttPort').value) || DEFAULT_CONFIG.mqtt_port;
+            config.mqtt_path = document.getElementById('mqttPath').value.trim() || DEFAULT_CONFIG.mqtt_path;
+            config.mqtt_user = document.getElementById('mqttUser').value.trim() || DEFAULT_CONFIG.mqtt_user;
+            config.mqtt_pwd = document.getElementById('mqttPassword').value.trim() || DEFAULT_CONFIG.mqtt_pwd;
+            config.mqtt_ssl = document.getElementById('mqttSSL').checked;
+            
+            saveConfig();
+            hideMqttConfig();
+            
+            if (mqttClient) {
+                mqttClient.end();
+                mqttClient = null;
+            }
+            
+            setTimeout(() => {
+                connectMQTT();
+            }, 1000);
+            
+            showNotification('MQTT配置已保存，正在重新连接...', 'info');
+        }
+
+        // 设备配置下发功能
+        function editDeviceInfo() {
+            if (currentDeviceId) {
+                editDevice(currentDeviceId, {stopPropagation: () => {}});
+            } else {
+                showNotification('请先选择要编辑的设备', 'error');
+            }
+        }
+
+        function sendDeviceConfig() {
+            if (!currentDeviceId) {
+                showNotification('请先选择要下发配置的设备', 'error');
+                return;
+            }
+            
+            if (!mqttClient || !isConnected) {
+                showNotification('MQTT连接未建立，无法下发配置', 'error');
+                return;
+            }
+            
+            const device = devices.find(d => d.id === currentDeviceId);
+            if (!device) {
+                showNotification('设备不存在', 'error');
+                return;
+            }
+            
+            // 填充配置对话框
+            document.getElementById('configDeviceId').value = `${device.name} (${device.id})`;
+            document.getElementById('configMqttHost').value = device.mqtt_host || '120.25.229.70';
+            document.getElementById('configMqttPort').value = device.mqtt_port || 1883;
+            document.getElementById('configMqttUser').value = device.mqtt_user || 'super-sms';
+            document.getElementById('configMqttPassword').value = device.mqtt_pwd || 'super-sms';
+            document.getElementById('configMqttSSL').checked = false; // 默认不启用SSL
+            
+            // 保存当前设备ID到对话框
+            document.getElementById('configDeviceModal').dataset.deviceId = currentDeviceId;
+            document.getElementById('configDeviceModal').classList.add('show');
+        }
+
+        function hideConfigDeviceModal() {
+            document.getElementById('configDeviceModal').classList.remove('show');
+        }
+
+        function confirmSendConfig() {
+            const deviceId = document.getElementById('configDeviceModal').dataset.deviceId;
+            const device = devices.find(d => d.id === deviceId);
+            
+            if (!device) {
+                showNotification('设备不存在', 'error');
+                hideConfigDeviceModal();
+                return;
+            }
+            
+            // 获取配置数据
+            const configData = {
+                mqtt_host: document.getElementById('configMqttHost').value.trim(),
+                mqtt_port: parseInt(document.getElementById('configMqttPort').value),
+                mqtt_user: document.getElementById('configMqttUser').value.trim(),
+                mqtt_pwd: document.getElementById('configMqttPassword').value.trim(),
+                mqtt_ssl: document.getElementById('configMqttSSL').checked
+            };
+            
+            // 验证必填字段
+            if (!configData.mqtt_host || !configData.mqtt_port) {
+                showNotification('请填写完整的MQTT服务器配置', 'error');
+                return;
+            }
+            
+            // 构建下发命令
+            const command = {
+                command: 'update_config',
+                config: configData
+            };
+            
+            try {
+                // 发送配置命令到设备
+                mqttClient.publish(`${deviceId}/control`, JSON.stringify(command));
+                showNotification('正在下发配置到设备，设备将重启...', 'info');
+                hideConfigDeviceModal();
+                
+                // 监控设备是否重新上线
+                monitorDeviceReconnection(deviceId);
+                
+            } catch (error) {
+                console.error('下发配置失败:', error);
+                showNotification('配置下发失败: ' + error.message, 'error');
+            }
+        }
+
+        function monitorDeviceReconnection(deviceId) {
+            const startTime = Date.now();
+            const maxWaitTime = 60000; // 最多等待60秒
+            
+            const checkInterval = setInterval(() => {
+                if (deviceStatus[deviceId] && deviceStatus[deviceId].online) {
+                    clearInterval(checkInterval);
+                    showNotification(`设备 ${deviceId} 重新上线，配置更新成功`, 'success');
+                    
+                    // 更新设备信息
+                    const device = devices.find(d => d.id === deviceId);
+                    if (device) {
+                        device.mqtt_host = document.getElementById('configMqttHost').value.trim();
+                        device.mqtt_port = parseInt(document.getElementById('configMqttPort').value);
+                        device.mqtt_user = document.getElementById('configMqttUser').value.trim();
+                        device.mqtt_pwd = document.getElementById('configMqttPassword').value.trim();
+                        saveDevices();
+                    }
+                } else if (Date.now() - startTime > maxWaitTime) {
+                    clearInterval(checkInterval);
+                    showNotification(`设备 ${deviceId} 等待超时，请检查设备状态`, 'error');
+                }
+            }, 2000); // 每2秒检查一次
+        }
+
+        // 事件监听器
+        function setupEventListeners() {
+            // 定期检查设备在线状态
+            setInterval(() => {
+                Object.keys(deviceStatus).forEach(deviceId => {
+                    if (deviceStatus[deviceId].online && 
+                        Date.now() - deviceStatus[deviceId].lastPing > 60000) {
+                        deviceStatus[deviceId].online = false;
+                        renderDeviceList();
+                        
+                        if (deviceId === currentDeviceId) {
+                            showNotification(`设备 ${deviceId} 已离线`, 'error');
+                        }
+                    }
+                });
+            }, 30000);
+            
+            // 键盘快捷键
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey || e.metaKey) {
+                    switch(e.key) {
+                        case 'n':
+                            e.preventDefault();
+                            showAddDeviceModal();
+                            break;
+                        case 'r':
+                            e.preventDefault();
+                            refreshAllDevices();
+                            break;
+                        case 'e':
+                            e.preventDefault();
+                            editCurrentDevice();
+                            break;
+                    }
+                }
+            });
+        }
+
+        // 页面加载完成后初始化
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
