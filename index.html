@@ -794,7 +794,8 @@
                     <h2 id="currentDeviceName">请选择设备</h2>
                     <div class="device-header-actions">
                         <button class="device-btn edit" onclick="editDeviceInfo()" id="editDeviceBtn">✏️ 编辑信息</button>
-                        <button class="device-btn config" onclick="sendDeviceConfig()" id="configDeviceBtn">⚙️ 下发配置</button>
+                        <!-- 下发配置按钮已隐藏 -->
+                        <!-- <button class="device-btn config" onclick="sendDeviceConfig()" id="configDeviceBtn">⚙️ 下发配置</button> -->
                         <button class="device-btn restart" onclick="restartDevice()" id="restartDeviceBtn">🔄 重启设备</button>
                         <button class="device-btn delete" onclick="removeCurrentDevice()" id="removeDeviceBtn">🗑️ 删除</button>
                     </div>
@@ -919,50 +920,51 @@
         </div>
     </div>
 
-    <!-- 配置下发对话框 -->
-    <div class="modal-overlay" id="configDeviceModal">
+    <!-- 添加继电器对话框 -->
+    <div class="modal-overlay" id="addRelayModal">
         <div class="modal">
             <div class="modal-header">
-                <h3 class="modal-title">⚙️ 下发配置到设备</h3>
-                <button class="modal-close" onclick="hideConfigDeviceModal()">×</button>
+                <h3 class="modal-title">🔌 添加继电器</h3>
+                <button class="modal-close" onclick="hideAddRelayModal()">×</button>
             </div>
             <div class="form-group">
-                <label class="form-label">目标设备</label>
-                <input type="text" class="form-input" id="configDeviceId" readonly>
+                <label class="form-label">继电器名称</label>
+                <input type="text" class="form-input" id="addRelayNameInput" placeholder="输入继电器名称">
             </div>
             <div class="form-group">
-                <label class="form-label">MQTT服务器地址</label>
-                <input type="text" class="form-input" id="configMqttHost" placeholder="mqtt服务器地址">
-            </div>
-            <div class="form-group">
-                <label class="form-label">端口号</label>
-                <input type="number" class="form-input" id="configMqttPort" placeholder="MQTT端口">
-            </div>
-            <div class="form-group">
-                <label class="form-label">用户名</label>
-                <input type="text" class="form-input" id="configMqttUser" placeholder="MQTT用户名">
-            </div>
-            <div class="form-group">
-                <label class="form-label">密码</label>
-                <input type="password" class="form-input" id="configMqttPassword" placeholder="MQTT密码">
-            </div>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" class="form-checkbox" id="configMqttSSL">
-                    启用SSL加密
-                </label>
-            </div>
-            <div class="form-notice">
-                <p style="color: #e74c3c; font-size: 0.9rem; background: #fff8f8; padding: 10px; border-radius: 5px; border-left: 3px solid #e74c3c;">
-                    ⚠️ 警告：下发配置后设备将重启并重新连接MQTT服务器
-                </p>
+                <label class="form-label">GPIO口编号</label>
+                <input type="number" class="form-input" id="addRelayGpioInput" placeholder="输入GPIO口编号">
             </div>
             <div class="form-actions">
-                <button class="btn btn-secondary" onclick="hideConfigDeviceModal()">取消</button>
-                <button class="btn btn-primary" onclick="confirmSendConfig()">确认下发</button>
+                <button class="btn btn-secondary" onclick="hideAddRelayModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveNewRelay()">添加继电器</button>
             </div>
         </div>
     </div>
+
+    <!-- 编辑继电器对话框 -->
+    <div class="modal-overlay" id="editRelayModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">✏️ 编辑继电器</h3>
+                <button class="modal-close" onclick="hideEditRelayModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">继电器名称</label>
+                <input type="text" class="form-input" id="editRelayNameInput" placeholder="输入继电器名称">
+            </div>
+            <div class="form-group">
+                <label class="form-label">GPIO口编号</label>
+                <input type="number" class="form-input" id="editRelayGpioInput" placeholder="输入GPIO口编号">
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-secondary" onclick="hideEditRelayModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveEditedRelay()">保存修改</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 配置下发对话框已移除 -->
 
     <script>
         // 默认配置
@@ -985,12 +987,16 @@
         // 设备管理
         let devices = [];
         let deviceStatus = {}; // 设备在线状态 {'device_id': {online: true, lastPing: timestamp}}
+        
+        // 继电器管理（每个设备有独立的继电器列表）
+        let deviceRelays = {}; // {'device_id': [relay1, relay2, ...]}
 
         // 初始化函数
         function init() {
             console.log('初始化多设备继电器控制系统...');
             loadConfig();
             loadDevices();
+            loadRelays();
             setupEventListeners();
             
             // 等待MQTT库加载完成
@@ -1056,6 +1062,193 @@
             console.log('设备列表已保存:', devices);
         }
 
+        function saveRelays() {
+            localStorage.setItem('relay_control_relays', JSON.stringify(deviceRelays));
+            console.log('继电器配置已保存:', deviceRelays);
+        }
+
+        function loadRelays() {
+            const saved = localStorage.getItem('relay_control_relays');
+            if (saved) {
+                try {
+                    deviceRelays = JSON.parse(saved);
+                    console.log('继电器配置已加载:', deviceRelays);
+                    console.log('设备数量:', Object.keys(deviceRelays).length);
+                    for (const deviceId in deviceRelays) {
+                        console.log(`设备 ${deviceId} 的继电器数量:`, deviceRelays[deviceId].length);
+                    }
+                } catch (e) {
+                    console.error('继电器配置加载失败:', e);
+                    deviceRelays = {};
+                }
+            } else {
+                console.log('没有找到保存的继电器配置，使用默认空配置');
+                deviceRelays = {};
+            }
+        }
+
+        // 继电器管理函数
+        function getCurrentDeviceRelays() {
+            if (!currentDeviceId) return [];
+            return deviceRelays[currentDeviceId] || [];
+        }
+
+        function showAddRelayModal() {
+            if (!currentDeviceId) {
+                showNotification('请先选择设备', 'error');
+                return;
+            }
+            
+            document.getElementById('addRelayNameInput').value = '';
+            document.getElementById('addRelayGpioInput').value = '';
+            document.getElementById('addRelayModal').classList.add('show');
+        }
+
+        function hideAddRelayModal() {
+            document.getElementById('addRelayModal').classList.remove('show');
+        }
+
+        function saveNewRelay() {
+            if (!currentDeviceId) {
+                showNotification('请先选择设备', 'error');
+                return;
+            }
+            
+            const name = document.getElementById('addRelayNameInput').value.trim();
+            const gpio = parseInt(document.getElementById('addRelayGpioInput').value);
+            
+            if (!name) {
+                showNotification('请输入继电器名称', 'error');
+                return;
+            }
+            
+            if (isNaN(gpio) || gpio <= 0) {
+                showNotification('请输入有效的GPIO口编号', 'error');
+                return;
+            }
+            
+            // 检查GPIO口是否已存在
+            const relays = getCurrentDeviceRelays();
+            if (relays.some(relay => relay.gpio === gpio)) {
+                showNotification('该GPIO口已被占用', 'error');
+                return;
+            }
+            
+            const newRelay = {
+                id: Date.now().toString(),
+                name: name,
+                gpio: gpio,
+                state: false
+            };
+            
+            if (!deviceRelays[currentDeviceId]) {
+                deviceRelays[currentDeviceId] = [];
+            }
+            
+            deviceRelays[currentDeviceId].push(newRelay);
+            
+            console.log(`[继电器管理] 添加新继电器:`, {
+                deviceId: currentDeviceId,
+                relay: newRelay,
+                totalRelays: deviceRelays[currentDeviceId].length
+            });
+            
+            saveRelays();
+            hideAddRelayModal();
+            renderRelayControls();
+            showNotification('继电器添加成功', 'success');
+        }
+
+        function showEditRelayModal(relayId) {
+            if (!currentDeviceId) return;
+            
+            const relays = getCurrentDeviceRelays();
+            const relay = relays.find(r => r.id === relayId);
+            
+            if (relay) {
+                document.getElementById('editRelayNameInput').value = relay.name;
+                document.getElementById('editRelayGpioInput').value = relay.gpio;
+                document.getElementById('editRelayModal').dataset.editingRelayId = relayId;
+                document.getElementById('editRelayModal').classList.add('show');
+            }
+        }
+
+        function hideEditRelayModal() {
+            document.getElementById('editRelayModal').classList.remove('show');
+        }
+
+        function saveEditedRelay() {
+            if (!currentDeviceId) {
+                showNotification('请先选择设备', 'error');
+                return;
+            }
+            
+            const relayId = document.getElementById('editRelayModal').dataset.editingRelayId;
+            const relays = getCurrentDeviceRelays();
+            const relayIndex = relays.findIndex(r => r.id === relayId);
+            
+            if (relayIndex === -1) {
+                showNotification('继电器不存在', 'error');
+                return;
+            }
+            
+            const name = document.getElementById('editRelayNameInput').value.trim();
+            const gpio = parseInt(document.getElementById('editRelayGpioInput').value);
+            
+            if (!name) {
+                showNotification('请输入继电器名称', 'error');
+                return;
+            }
+            
+            if (isNaN(gpio) || gpio <= 0) {
+                showNotification('请输入有效的GPIO口编号', 'error');
+                return;
+            }
+            
+            // 检查GPIO口是否被其他继电器占用
+            if (relays.some((r, index) => r.gpio === gpio && index !== relayIndex)) {
+                showNotification('该GPIO口已被占用', 'error');
+                return;
+            }
+            
+            deviceRelays[currentDeviceId][relayIndex].name = name;
+            deviceRelays[currentDeviceId][relayIndex].gpio = gpio;
+            
+            const updatedRelay = deviceRelays[currentDeviceId][relayIndex];
+            console.log(`[继电器管理] 编辑继电器:`, {
+                deviceId: currentDeviceId,
+                relayId: relayId,
+                updatedRelay: updatedRelay,
+                changes: { name, gpio }
+            });
+            
+            saveRelays();
+            hideEditRelayModal();
+            renderRelayControls();
+            showNotification('继电器信息已更新', 'success');
+        }
+
+        function deleteRelay(relayId) {
+            if (!currentDeviceId) return;
+            
+            const relays = getCurrentDeviceRelays();
+            const relay = relays.find(r => r.id === relayId);
+            
+            if (relay && confirm(`确定要删除继电器"${relay.name}"吗？`)) {
+                deviceRelays[currentDeviceId] = relays.filter(r => r.id !== relayId);
+                
+                console.log(`[继电器管理] 删除继电器:`, {
+                    deviceId: currentDeviceId,
+                    deletedRelay: relay,
+                    remainingRelays: deviceRelays[currentDeviceId].length
+                });
+                
+                saveRelays();
+                renderRelayControls();
+                showNotification('继电器已删除', 'success');
+            }
+        }
+
         function renderDeviceList() {
             const deviceList = document.getElementById('deviceList');
             deviceList.innerHTML = '';
@@ -1087,12 +1280,15 @@
             currentDeviceId = deviceId;
             const device = devices.find(d => d.id === deviceId);
             
+            console.log(`[设备选择] 选择设备:`, {
+                deviceId: deviceId,
+                deviceName: device ? device.name : '未知',
+                currentDeviceId: currentDeviceId
+            });
+            
             if (device) {
                 document.getElementById('currentDeviceName').textContent = device.name;
                 renderRelayControls(device);
-                
-                // 刷新设备状态
-                getCurrentDeviceStatus();
             }
             
             renderDeviceList();
@@ -1101,41 +1297,124 @@
         function renderRelayControls(device) {
             const relayControls = document.getElementById('relayControls');
             
-            relayControls.innerHTML = `
-                <div class="relay-card" id="relay1Card">
-                    <div class="relay-header">
-                        <div class="relay-title" onclick="editRelayName(1)">${config.relay_names[0] || '继电器 1'}</div>
-                        <div class="relay-icon relay1-icon">🔌</div>
+            if (!currentDeviceId) {
+                relayControls.innerHTML = '<div class="no-device-selected"><p>请在左侧选择要控制的设备</p></div>';
+                return;
+            }
+            
+            const relays = getCurrentDeviceRelays();
+            
+            if (relays.length === 0) {
+                relayControls.innerHTML = `
+                    <div class="no-device-selected">
+                        <p>当前设备没有配置继电器</p>
+                        <button class="device-btn" onclick="showAddRelayModal()" style="margin-top: 15px;">
+                            ➕ 添加第一个继电器
+                        </button>
                     </div>
-                    <div class="relay-state">
-                        <div class="state-indicator">
-                            <div class="state-led off" id="relay1Led"></div>
-                            <span class="state-text off" id="relay1State">设备已关闭</span>
+                `;
+                return;
+            }
+            
+            // 动态生成继电器卡片
+            const relayCards = relays.map(relay => {
+                const relayIconClass = `relay${(relays.indexOf(relay) % 2) + 1}-icon`;
+                const stateClass = relay.state ? 'on' : 'off';
+                const stateText = relay.state ? '设备运行中' : '设备已关闭';
+                
+                return `
+                    <div class="relay-card" id="relay${relay.id}Card">
+                        <div class="relay-header">
+                            <div class="relay-title" onclick="showEditRelayModal('${relay.id}')">${relay.name}</div>
+                            <div class="relay-icon ${relayIconClass}">🔌</div>
+                        </div>
+                        <div class="relay-state">
+                            <div class="state-indicator">
+                                <div class="state-led ${stateClass}" id="relay${relay.id}Led"></div>
+                                <span class="state-text ${stateClass}" id="relay${relay.id}State">${stateText}</span>
+                            </div>
+                        </div>
+                        <div class="control-buttons">
+                            <button class="btn btn-on" onclick="controlRelayById('${relay.id}', true)" id="relay${relay.id}On">开启</button>
+                            <button class="btn btn-off" onclick="controlRelayById('${relay.id}', false)" id="relay${relay.id}Off">关闭</button>
+                            <button class="btn btn-toggle" onclick="toggleRelayById('${relay.id}')" id="relay${relay.id}Toggle">切换状态</button>
+                        </div>
+                        <div style="margin-top: 15px; text-align: center;">
+                            <button class="device-item-btn edit" onclick="showEditRelayModal('${relay.id}')" title="编辑">✏️</button>
+                            <button class="device-item-btn delete" onclick="deleteRelay('${relay.id}')" title="删除">🗑️</button>
                         </div>
                     </div>
-                    <div class="control-buttons">
-                        <button class="btn btn-on" onclick="controlRelay(1, true)" id="relay1On">开启</button>
-                        <button class="btn btn-off" onclick="controlRelay(1, false)" id="relay1Off">关闭</button>
-                    </div>
-                </div>
-
-                <div class="relay-card" id="relay2Card">
-                    <div class="relay-header">
-                        <div class="relay-title" onclick="editRelayName(2)">${config.relay_names[1] || '继电器 2'}</div>
-                        <div class="relay-icon relay2-icon">🔌</div>
-                    </div>
-                    <div class="relay-state">
-                        <div class="state-indicator">
-                            <div class="state-led off" id="relay2Led"></div>
-                            <span class="state-text off" id="relay2State">设备已关闭</span>
-                        </div>
-                    </div>
-                    <div class="control-buttons">
-                        <button class="btn btn-on" onclick="controlRelay(2, true)" id="relay2On">开启</button>
-                        <button class="btn btn-off" onclick="controlRelay(2, false)" id="relay2Off">关闭</button>
-                    </div>
+                `;
+            }).join('');
+            
+            // 添加"添加继电器"按钮
+            const addButton = `
+                <div class="relay-card" style="text-align: center; cursor: pointer;" onclick="showAddRelayModal()">
+                    <div style="font-size: 3rem; color: #7f8c8d; margin: 20px 0;">+</div>
+                    <div style="font-size: 1.2rem; color: #7f8c8d;">添加继电器</div>
                 </div>
             `;
+            
+            relayControls.innerHTML = relayCards + addButton;
+        }
+
+        // 继电器控制函数
+        function controlRelayById(relayId, state) {
+            if (!currentDeviceId || !mqttClient || !isConnected) {
+                showNotification('请先选择设备并确保MQTT连接正常', 'error');
+                return;
+            }
+            
+            const relays = getCurrentDeviceRelays();
+            const relay = relays.find(r => r.id === relayId);
+            
+            if (!relay) {
+                showNotification('继电器不存在', 'error');
+                return;
+            }
+            
+            try {
+                // 构建控制命令
+                const command = {
+                    gpio: relay.gpio,
+                    action: state ? "open" : "close"
+                };
+                
+                // 打印控制台日志
+                console.log(`[命令下发] 继电器控制命令:`, {
+                    deviceId: currentDeviceId,
+                    topic: `${currentDeviceId}/sub`,
+                    command: command,
+                    relayName: relay.name,
+                    action: state
+                });
+                
+                // 发送MQTT命令
+                mqttClient.publish(`${currentDeviceId}/sub`, JSON.stringify(command));
+                
+                // 更新本地状态（假设控制成功）
+                relay.state = state;
+                saveRelays();
+                
+                // 更新UI显示
+                renderRelayControls();
+                
+                showNotification(`继电器"${relay.name}"${state ? '开启' : '关闭'}命令已发送`, 'success');
+                
+            } catch (error) {
+                console.error('控制继电器失败:', error);
+                showNotification('控制继电器失败: ' + error.message, 'error');
+            }
+        }
+
+        function toggleRelayById(relayId) {
+            const relays = getCurrentDeviceRelays();
+            const relay = relays.find(r => r.id === relayId);
+            
+            if (relay) {
+                // 切换状态
+                controlRelayById(relayId, !relay.state);
+            }
         }
 
         // 设备管理对话框函数
@@ -1273,8 +1552,16 @@
                 try {
                     // 发送重启命令
                     const command = {
-                        command: "repboot"
+                        command: "reboot"
                     };
+                    
+                    // 打印控制台日志
+                    console.log(`[命令下发] 设备重启命令:`, {
+                        deviceId: device.id,
+                        deviceName: device.name,
+                        topic: `${device.id}/sub`,
+                        command: command
+                    });
                     
                     mqttClient.publish(`${device.id}/sub`, JSON.stringify(command));
                     showNotification(`正在重启设备 "${device.name}"...`, 'info');
@@ -1293,10 +1580,6 @@
             devices.forEach(device => {
                 console.log('刷新设备状态:', device.id);
             });
-            
-            if (currentDeviceId) {
-                getCurrentDeviceStatus();
-            }
             
             showNotification('正在刷新所有设备状态', 'info');
         }
@@ -1347,12 +1630,7 @@
             showNotification('MQTT连接成功', 'success');
             
             subscribeToAllDevices();
-            
-            setTimeout(() => {
-                if (currentDeviceId) {
-                    getCurrentDeviceStatus();
-                }
-            }, 1000);
+
         }
 
         function subscribeToAllDevices() {
@@ -1363,13 +1641,6 @@
                 mqttClient.subscribe(`${device.id}/pub`, (err) => {
                     if (!err) {
                         console.log(`已订阅设备 ${device.id} 状态发布主题`);
-                    }
-                });
-                
-                // 订阅设备心跳主题，检查设备在线状态
-                mqttClient.subscribe(`${device.id}/status`, (err) => {
-                    if (!err) {
-                        console.log(`已订阅设备 ${device.id} 心跳主题`);
                     }
                 });
             });
@@ -1396,7 +1667,7 @@
         }
 
         function onMessageArrived(topic, message) {
-            console.log('收到消息:', topic, message.toString());
+            console.log('[收到设备消息]:', topic, message.toString());
             
             try {
                 const data = JSON.parse(message.toString());
@@ -1411,9 +1682,6 @@
                     }
                     // 只要收到pub主题数据就认为设备在线
                     updateDeviceOnlineStatus(deviceId, true);
-                } else if (topic.endsWith('/status')) {
-                    // 从设备心跳主题更新设备在线状态
-                    updateDeviceOnlineStatus(deviceId, true);
                 }
                 
             } catch (error) {
@@ -1427,7 +1695,7 @@
                 deviceStatus[deviceId] = {};
             }
             
-            // 只要收到status主题的数据就认为设备在线
+            // 只要收到pub主题的数据就认为设备在线
             deviceStatus[deviceId].online = isOnline;
             
             // 更新设备列表显示
@@ -1436,146 +1704,62 @@
 
         // 更新继电器状态显示
         function updateRelayStates(data) {
-            // GPIO编号映射到继电器编号
-            const gpioMap = {37: 1, 38: 2}; // GPIO37对应继电器1，GPIO38对应继电器2
+            if (!currentDeviceId) return;
             
-            // 遍历所有GPIO状态
+            const relays = getCurrentDeviceRelays();
+            
+            // 遍历所有GPIO状态数据
             Object.keys(data).forEach(gpioKey => {
-                // 提取GPIO编号（如"gpio37"中的37）
-                const gpioNum = parseInt(gpioKey.replace('gpio', ''));
-                const relayNum = gpioMap[gpioNum];
+                // 只处理gpio前缀的字段
+                if (!gpioKey.startsWith('gpio')) return;
                 
-                if (relayNum && data[gpioKey] !== undefined) {
-                    // 高电平为1表示开，低电平为0表示关
-                    const isOn = data[gpioKey] === 1;
-                    
-                    const relayState = document.getElementById(`relay${relayNum}State`);
-                    const relayOn = document.getElementById(`relay${relayNum}On`);
-                    const relayOff = document.getElementById(`relay${relayNum}Off`);
-                    
-                    if (relayState) {
-                        relayState.textContent = isOn ? '设备运行中' : '设备已关闭';
-                        relayState.className = `state-text ${isOn ? 'on' : 'off'}`;
-                    }
-                    
-                    const relayLed = document.getElementById(`relay${relayNum}Led`);
-                    if (relayLed) {
-                        relayLed.className = `state-led ${isOn ? 'on' : 'off'}`;
-                    }
-                    
-                    if (relayOn && relayOff) {
-                        relayOn.disabled = isOn;
-                        relayOff.disabled = !isOn;
-                    }
+                // 提取GPIO编号（如"gpio24"中的24）
+                const gpioNum = parseInt(gpioKey.replace('gpio', ''));
+                
+                // 查找对应的继电器
+                const relay = relays.find(r => r.gpio === gpioNum);
+                if (!relay || data[gpioKey] === undefined) return;
+                
+                // 高电平为1表示开，低电平为0表示关
+                const isOn = data[gpioKey] === 1;
+                
+                // 更新继电器本地状态
+                relay.state = isOn;
+                
+                // 更新UI显示
+                const relayState = document.getElementById(`relay${relay.id}State`);
+                const relayLed = document.getElementById(`relay${relay.id}Led`);
+                const relayOn = document.getElementById(`relay${relay.id}On`);
+                const relayOff = document.getElementById(`relay${relay.id}Off`);
+                
+                if (relayState) {
+                    relayState.textContent = isOn ? '设备运行中' : '设备已关闭';
+                    relayState.className = `state-text ${isOn ? 'on' : 'off'}`;
+                }
+                
+                if (relayLed) {
+                    relayLed.className = `state-led ${isOn ? 'on' : 'off'}`;
+                }
+                
+                if (relayOn && relayOff) {
+                    relayOn.disabled = isOn;
+                    relayOff.disabled = !isOn;
                 }
             });
+            
+            // 保存更新后的继电器状态
+            saveRelays();
         }
 
-        // 处理命令响应
+        // 处理命令响应（已弃用，保留以防旧代码调用）
         function handleCommandResponse(data) {
-            if (data.result === 'success') {
-                showNotification('操作执行成功', 'success');
-                
-                // 如果是继电器控制，更新状态显示
-                if (data.relay_num !== undefined && data.state !== undefined) {
-                    const relayElement = document.getElementById(`relay${data.relay_num}State`);
-                    if (relayElement) {
-                        relayElement.textContent = data.state ? '设备运行中' : '设备已关闭';
-                        relayElement.className = `state-text ${data.state ? 'on' : 'off'}`;
-                    }
-                    
-                    const relayLed = document.getElementById(`relay${data.relay_num}Led`);
-                    if (relayLed) {
-                        relayLed.className = `state-led ${data.state ? 'on' : 'off'}`;
-                    }
-                }
-            } else {
-                showNotification('操作失败: ' + (data.message || '未知错误'), 'error');
-            }
+            console.log('[已弃用] handleCommandResponse被调用:', data);
+            // 这个函数已经被updateRelayStates替代，不再需要
         }
 
-        // 继电器控制函数
-        function controlRelay(relayNum, state) {
-            if (!currentDeviceId || !mqttClient || !isConnected) {
-                showNotification('请先连接MQTT并选择设备', 'error');
-                return;
-            }
-            
-            const device = devices.find(d => d.id === currentDeviceId);
-            if (!device) {
-                showNotification('设备不存在', 'error');
-                return;
-            }
-            
-            // 继电器编号映射到GPIO口
-            const gpioMap = {1: 37, 2: 38}; // 继电器1对应GPIO37，继电器2对应GPIO38
-            const gpio = gpioMap[relayNum];
-            
-            if (!gpio) {
-                showNotification('无效的继电器编号', 'error');
-                return;
-            }
-            
-            const command = {
-                gpio: gpio,
-                action: state ? 'open' : 'close'
-            };
-            
-            try {
-                mqttClient.publish(`${device.id}/sub`, JSON.stringify(command));
-                showNotification(`正在${state ? '开启' : '关闭'}继电器${relayNum} (GPIO${gpio})`, 'info');
-            } catch (error) {
-                console.error('发送控制命令失败:', error);
-                showNotification('控制命令发送失败', 'error');
-            }
-        }
+        // controlRelay函数已被controlRelayById替代，删除冗余代码
 
-        // 切换继电器状态
-        function toggleRelay(relayNum) {
-            if (!currentDeviceId || !mqttClient || !isConnected) {
-                showNotification('请先连接MQTT并选择设备', 'error');
-                return;
-            }
-            
-            const device = devices.find(d => d.id === currentDeviceId);
-            if (!device) {
-                showNotification('设备不存在', 'error');
-                return;
-            }
-            
-            const command = {
-                command: 'toggle_relay',
-                relay_num: relayNum
-            };
-            
-            try {
-                mqttClient.publish(`${device.id}/sub`, JSON.stringify(command));
-                showNotification(`正在切换继电器${relayNum}状态`, 'info');
-            } catch (error) {
-                console.error('发送切换命令失败:', error);
-                showNotification('切换命令发送失败', 'error');
-            }
-        }
-
-        // 获取当前设备状态
-        function getCurrentDeviceStatus() {
-            if (!currentDeviceId || !mqttClient || !isConnected) {
-                showNotification('请先连接MQTT并选择设备', 'error');
-                return;
-            }
-            
-            const command = {
-                command: 'get_status'
-            };
-            
-            try {
-                mqttClient.publish(`${currentDeviceId}/control`, JSON.stringify(command));
-                showNotification('正在获取设备状态...', 'info');
-            } catch (error) {
-                console.error('发送状态查询命令失败:', error);
-                showNotification('状态查询失败', 'error');
-            }
-        }
+        // getCurrentDeviceStatus函数已移除，设备状态通过/pub主题数据自动更新
 
         // 界面控制
         function updateStatus(text, connected) {
@@ -1678,110 +1862,9 @@
             }
         }
 
-        function sendDeviceConfig() {
-            if (!currentDeviceId) {
-                showNotification('请先选择要下发配置的设备', 'error');
-                return;
-            }
-            
-            if (!mqttClient || !isConnected) {
-                showNotification('MQTT连接未建立，无法下发配置', 'error');
-                return;
-            }
-            
-            const device = devices.find(d => d.id === currentDeviceId);
-            if (!device) {
-                showNotification('设备不存在', 'error');
-                return;
-            }
-            
-            // 填充配置对话框
-            document.getElementById('configDeviceId').value = `${device.name} (${device.id})`;
-            document.getElementById('configMqttHost').value = device.mqtt_host || '120.25.229.70';
-            document.getElementById('configMqttPort').value = device.mqtt_port || 1883;
-            document.getElementById('configMqttUser').value = device.mqtt_user || 'super-sms';
-            document.getElementById('configMqttPassword').value = device.mqtt_pwd || 'super-sms';
-            document.getElementById('configMqttSSL').checked = false; // 默认不启用SSL
-            
-            // 保存当前设备ID到对话框
-            document.getElementById('configDeviceModal').dataset.deviceId = currentDeviceId;
-            document.getElementById('configDeviceModal').classList.add('show');
-        }
+        // 配置下发功能已移除
 
-        function hideConfigDeviceModal() {
-            document.getElementById('configDeviceModal').classList.remove('show');
-        }
-
-        function confirmSendConfig() {
-            const deviceId = document.getElementById('configDeviceModal').dataset.deviceId;
-            const device = devices.find(d => d.id === deviceId);
-            
-            if (!device) {
-                showNotification('设备不存在', 'error');
-                hideConfigDeviceModal();
-                return;
-            }
-            
-            // 获取配置数据
-            const configData = {
-                mqtt_host: document.getElementById('configMqttHost').value.trim(),
-                mqtt_port: parseInt(document.getElementById('configMqttPort').value),
-                mqtt_user: document.getElementById('configMqttUser').value.trim(),
-                mqtt_pwd: document.getElementById('configMqttPassword').value.trim(),
-                mqtt_ssl: document.getElementById('configMqttSSL').checked
-            };
-            
-            // 验证必填字段
-            if (!configData.mqtt_host || !configData.mqtt_port) {
-                showNotification('请填写完整的MQTT服务器配置', 'error');
-                return;
-            }
-            
-            // 构建下发命令
-            const command = {
-                command: 'update_config',
-                config: configData
-            };
-            
-            try {
-                // 发送配置命令到设备
-                mqttClient.publish(`${deviceId}/control`, JSON.stringify(command));
-                showNotification('正在下发配置到设备，设备将重启...', 'info');
-                hideConfigDeviceModal();
-                
-                // 监控设备是否重新上线
-                monitorDeviceReconnection(deviceId);
-                
-            } catch (error) {
-                console.error('下发配置失败:', error);
-                showNotification('配置下发失败: ' + error.message, 'error');
-            }
-        }
-
-        function monitorDeviceReconnection(deviceId) {
-            const startTime = Date.now();
-            const maxWaitTime = 60000; // 最多等待60秒
-            
-            const checkInterval = setInterval(() => {
-                if (deviceStatus[deviceId] && deviceStatus[deviceId].online) {
-                    clearInterval(checkInterval);
-                    showNotification(`设备 ${deviceId} 重新上线，配置更新成功`, 'success');
-                    
-                    // 更新设备信息
-                    const device = devices.find(d => d.id === deviceId);
-                    if (device) {
-                        device.mqtt_host = document.getElementById('configMqttHost').value.trim();
-                        device.mqtt_port = parseInt(document.getElementById('configMqttPort').value);
-                        device.mqtt_user = document.getElementById('configMqttUser').value.trim();
-                        device.mqtt_pwd = document.getElementById('configMqttPassword').value.trim();
-                        saveDevices();
-                    }
-                } else if (Date.now() - startTime > maxWaitTime) {
-                    clearInterval(checkInterval);
-                    showNotification(`设备 ${deviceId} 等待超时，请检查设备状态`, 'error');
-                }
-            }, 2000); // 每2秒检查一次
-        }
+        // monitorDeviceReconnection函数已移除，配置下发功能已禁用
 
         // 事件监听器
         function setupEventListeners() {
