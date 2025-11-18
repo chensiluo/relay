@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多设备继电器控制系统</title>
+    <title>远程继电器控制系统</title>
     <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+    <script src="index_config.js"></script>
     <style>
         * {
             margin: 0;
@@ -779,7 +780,7 @@
                 <div class="header-controls">
                     <button class="header-btn" onclick="showMqttConfig()">⚙️ MQTT设置</button>
                 </div>
-                <h1>🔌 多设备继电器控制系统</h1>
+                <h1>🔌 远程继电器控制系统</h1>
                 <p>基于 MQTT 协议的物联网设备远程控制</p>
                 <div class="connection-status">
                     <div class="status-indicator" id="statusIndicator"></div>
@@ -810,7 +811,7 @@
             </div>
 
             <div class="footer">
-                <p>© 2024 多设备继电器控制系统 | 基于合宙 Air780EP 开发</p>
+                <p>© 2025 远程多设备多继电器控制系统 </p>
             </div>
         </div>
     </div>
@@ -967,16 +968,7 @@
     <!-- 配置下发对话框已移除 -->
 
     <script>
-        // 默认配置
-        const DEFAULT_CONFIG = {
-            mqtt_host: '120.25.229.70',
-            mqtt_port: 8083,
-            mqtt_path: 'mqtt',
-            mqtt_user: 'super-sms',
-            mqtt_pwd: 'super-sms',
-            mqtt_ssl: false,
-            relay_names: ['继电器 1', '继电器 2']
-        };
+        // DEFAULT_CONFIG 已移至 config.js
 
         // 全局变量
         let mqttClient = null;
@@ -993,11 +985,21 @@
 
         // 初始化函数
         function init() {
-            console.log('初始化多设备继电器控制系统...');
+            console.log('初始化远程多设备多继电器控制系统...');
             loadConfig();
             loadDevices();
             loadRelays();
             setupEventListeners();
+            
+            // 启动心跳超时检测定时器（每5秒检查一次）
+            setInterval(checkDeviceTimeout, 5000);
+            
+            // 检查MQTT配置是否完整
+            if (!isConfigComplete()) {
+                showNotification('请先配置 MQTT 服务器', 'info');
+                showMqttConfig(); // 自动显示配置对话框
+                return;
+            }
             
             // 等待MQTT库加载完成
             if (typeof mqtt !== 'undefined') {
@@ -1030,6 +1032,14 @@
                 config = {...DEFAULT_CONFIG};
                 console.log('使用默认配置:', config);
             }
+        }
+
+        // 检查MQTT配置是否完整
+        function isConfigComplete() {
+            return config.mqtt_host && 
+                   config.mqtt_port && 
+                   config.mqtt_user && 
+                   config.mqtt_pwd;
         }
 
         function saveConfig() {
@@ -1643,6 +1653,13 @@
                         console.log(`已订阅设备 ${device.id} 状态发布主题`);
                     }
                 });
+                
+                // 订阅设备状态主题，接收心跳
+                mqttClient.subscribe(`${device.id}/status`, (err) => {
+                    if (!err) {
+                        console.log(`已订阅设备 ${device.id} 心跳主题`);
+                    }
+                });
             });
         }
 
@@ -1667,21 +1684,30 @@
         }
 
         function onMessageArrived(topic, message) {
-            console.log('[收到设备消息]:', topic, message.toString());
-            
             try {
-                const data = JSON.parse(message.toString());
-                
-                // 提取设备ID
                 const deviceId = topic.split('/')[0];
                 
-                if (topic.endsWith('/pub')) {
+                if (topic.endsWith('/status')) {
+                    // 处理心跳消息 - 不打印到控制台
+                    // 只要收到心跳就认为设备在线
+                    updateDeviceOnlineStatus(deviceId, true);
+                    
+                } else if (topic.endsWith('/pub')) {
+                    // 处理设备状态消息
+                    console.log('[收到设备状态]:', topic, message.toString());
+                    
+                    const data = JSON.parse(message.toString());
+                    
                     // 从设备发布主题接收GPIO状态
                     if (deviceId === currentDeviceId) {
                         updateRelayStates(data);
                     }
                     // 只要收到pub主题数据就认为设备在线
                     updateDeviceOnlineStatus(deviceId, true);
+                    
+                } else {
+                    // 其他消息打印到控制台
+                    console.log('[收到设备消息]:', topic, message.toString());
                 }
                 
             } catch (error) {
@@ -1695,11 +1721,31 @@
                 deviceStatus[deviceId] = {};
             }
             
-            // 只要收到pub主题的数据就认为设备在线
+            // 更新在线状态和最后心跳时间
             deviceStatus[deviceId].online = isOnline;
+            deviceStatus[deviceId].lastPing = Date.now();
             
             // 更新设备列表显示
             renderDeviceList();
+        }
+
+        // 检查设备心跳超时（超过5秒没有心跳认为离线）
+        function checkDeviceTimeout() {
+            const currentTime = Date.now();
+            const timeout = 5000; // 5秒超时
+            
+            devices.forEach(device => {
+                if (deviceStatus[device.id] && deviceStatus[device.id].lastPing) {
+                    const timeSinceLastPing = currentTime - deviceStatus[device.id].lastPing;
+                    
+                    if (timeSinceLastPing > timeout && deviceStatus[device.id].online) {
+                        // 超时且当前状态为在线，更新为离线
+                        deviceStatus[device.id].online = false;
+                        console.log(`设备 ${device.id} 心跳超时，标记为离线`);
+                        renderDeviceList();
+                    }
+                }
+            });
         }
 
         // 更新继电器状态显示
@@ -1787,7 +1833,7 @@
         // 继电器名称编辑
         function editRelayName(relayNum) {
             document.getElementById('editingRelayNum').textContent = relayNum;
-            document.getElementById('relayNameInput').value = config.relay_names[relayNum - 1] || `继电器 ${relayNum}`;
+            document.getElementById('relayNameInput').value = `继电器 ${relayNum}`;
             document.getElementById('relayNameModal').dataset.editingRelayNum = relayNum;
             document.getElementById('relayNameModal').classList.add('show');
         }
@@ -1801,7 +1847,7 @@
             const newName = document.getElementById('relayNameInput').value.trim();
             
             if (newName) {
-                config.relay_names[relayNum - 1] = newName;
+                // 继电器名称已移除配置
                 saveConfig();
                 
                 const relayTitle = document.querySelector(`#relay${relayNum}Card .relay-title`);
@@ -1831,12 +1877,18 @@
         }
 
         function saveMqttConfig() {
-            config.mqtt_host = document.getElementById('mqttHost').value.trim() || DEFAULT_CONFIG.mqtt_host;
-            config.mqtt_port = parseInt(document.getElementById('mqttPort').value) || DEFAULT_CONFIG.mqtt_port;
-            config.mqtt_path = document.getElementById('mqttPath').value.trim() || DEFAULT_CONFIG.mqtt_path;
-            config.mqtt_user = document.getElementById('mqttUser').value.trim() || DEFAULT_CONFIG.mqtt_user;
-            config.mqtt_pwd = document.getElementById('mqttPassword').value.trim() || DEFAULT_CONFIG.mqtt_pwd;
+            config.mqtt_host = document.getElementById('mqttHost').value.trim();
+            config.mqtt_port = parseInt(document.getElementById('mqttPort').value);
+            config.mqtt_path = document.getElementById('mqttPath').value.trim() || 'mqtt';
+            config.mqtt_user = document.getElementById('mqttUser').value.trim();
+            config.mqtt_pwd = document.getElementById('mqttPassword').value.trim();
             config.mqtt_ssl = document.getElementById('mqttSSL').checked;
+            
+            // 验证必填字段
+            if (!config.mqtt_host || !config.mqtt_port || !config.mqtt_user || !config.mqtt_pwd) {
+                showNotification('请填写完整的MQTT配置信息（服务器地址、端口、用户名、密码）', 'error');
+                return;
+            }
             
             saveConfig();
             hideMqttConfig();

@@ -2,7 +2,7 @@ PROJECT = "relay_control"
 VERSION = "1.0.0"
 
 sys = require("sys")
-conf = require("conf")
+conf = require("main_config")
 
 -- 从配置文件加载硬件引脚配置
 local LED_RX_GPIO = conf.LED_RX_GPIO
@@ -91,6 +91,7 @@ local mqtt_client = nil
 local imei = mobile.imei()
 local sub_topic = imei.."/sub"       -- 设备订阅主题，前端发布命令
 local pub_topic = imei.."/pub"       -- 设备发布主题，设备发布GPIO状态
+local status_topic = imei.."/status" -- 设备状态主题，用于定时发送心跳
 
 
 
@@ -437,6 +438,21 @@ sys.taskInit(function()
         end
         
         sys.wait(30000)  -- 每30秒发送一次
+    end
+end)
+
+-- 心跳定时任务（每1秒发送一个点）
+sys.taskInit(function()
+    log_msg("SYSTEM", "开始定时发送心跳...")
+    -- 启动2秒定时发送心跳
+    while true do
+        -- 检查MQTT连接状态
+        if mqtt_client and mqtt_client:ready() then
+            -- 发送心跳到status主题
+            mqtt_client:publish(status_topic, ".")
+        end
+        
+        sys.wait(2000)  -- 每2秒发送一次
     end
 end)
 
