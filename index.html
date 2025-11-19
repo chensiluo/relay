@@ -738,6 +738,12 @@
                 width: 100%;
                 border-right: none;
                 border-bottom: 1px solid #e9ecef;
+                height: 300px; /* 固定高度 */
+            }
+            
+            .device-list {
+                height: 260px; /* 设置列表高度，留出标题空间 */
+                overflow-y: auto; /* 垂直滚动 */
             }
             
             .relay-controls {
@@ -745,11 +751,30 @@
             }
             
             .header h1 {
-                font-size: 2rem;
+                font-size: 1.1rem;
             }
             
             .control-buttons {
                 grid-template-columns: 1fr;
+            }
+            
+            /* 手机端继电器控制区域优化 */
+            .device-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+                margin-bottom: 15px;
+            }
+            
+            .device-header h2 {
+                text-align: center;
+                font-size: 1rem;
+            }
+            
+            .device-header-actions {
+                justify-content: center;
+                flex-wrap: wrap;
+                gap: 8px;
             }
             
             .header-controls {
